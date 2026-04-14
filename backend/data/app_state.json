@@ -1,0 +1,52 @@
+{
+  "job_description": {
+    "jd_text": "We need a Java Backend Developer with Spring Boot, REST APIs, MySQL, Git, Docker, and strong problem solving skills.",
+    "target_title": "Java Backend Developer",
+    "company_name": "Example Tech"
+  },
+  "profile": {
+    "name": "Sharath Chandra Karupakala",
+    "email": "sharath@example.com",
+    "skills": [
+      "Java",
+      "Spring Boot",
+      "REST APIs",
+      "MySQL",
+      "Git"
+    ],
+    "education": "B.Tech in Computer Science and Engineering",
+    "phone": "+91 98765 43210",
+    "location": "Hyderabad, India",
+    "headline": "Java Backend Developer",
+    "core_competencies": [
+      "Backend Development",
+      "API Design"
+    ],
+    "experience": [],
+    "projects": [
+      {
+        "title": "Inventory Management API",
+        "subtitle": "Personal Project",
+        "duration": "2025",
+        "description": "Built secure backend APIs for inventory and orders.",
+        "technologies": [
+          "Java",
+          "Spring Boot",
+          "MySQL",
+          "JWT"
+        ],
+        "highlights": [
+          "Implemented CRUD endpoints",
+          "Added JWT authentication"
+        ],
+        "link": ""
+      }
+    ],
+    "certifications": [
+      "Java Fundamentals"
+    ],
+    "links": {
+      "GitHub": "https://github.com/sharath"
+    }
+  }
+}

@@ -1,288 +1,388 @@
-from fastapi import FastAPI
+import re
+from pathlib import Path
+from typing import Any, Dict, List
 
-from backend.models.profile_models import UserProfile
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
 from backend.models.jd_models import JobDescription
-
-from backend.services.skill_extractor import extract_skills
-from backend.services.skill_matcher import match_skills
+from backend.models.profile_models import ResumeItem, UserProfile
+from backend.services.pdf_generator import generate_pdf_from_html
+from backend.services.resume_assembler import assemble_resume
 from backend.services.resume_scorer import calculate_resume_score
-from backend.services.skill_recommender import recommend_skills
+from backend.services.resume_section_generator import (
+    build_core_competencies,
+    build_technical_skill_groups,
+    generate_skills_section,
+)
 from backend.services.resume_selector import select_relevant_skills
 from backend.services.resume_summary_generator import generate_resume_summary
-from backend.services.resume_section_generator import generate_skills_section
-from backend.services.resume_assembler import assemble_resume
+from backend.services.skill_extractor import dedupe_skills, extract_skills
+from backend.services.skill_matcher import match_skills
+from backend.services.skill_recommender import recommend_skills
+from backend.services.state_store import AppStateStore
+from backend.services.template_registry import TEMPLATES, get_template
 from backend.services.template_renderer import render_resume
-from backend.services.template_registry import TEMPLATES
-from backend.services.pdf_generator import generate_pdf_from_html
-from fastapi.responses import FileResponse
-import os
-
-app = FastAPI()
-
-# -------------------------
-# In-memory storage
-# -------------------------
-stored_profile = None
-stored_jd = None
 
 
-# -------------------------
-# Root
-# -------------------------
+app = FastAPI(
+    title="Resume AI Builder API",
+    version="2.0.0",
+    description="Generate job-targeted resumes in a sample-inspired professional format.",
+)
+
+state_store = AppStateStore()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+GENERATED_DIR = PROJECT_ROOT / "generated"
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+
+
+def _model_dump(model: Any) -> Dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug or "resume"
+
+
+def _require_profile() -> UserProfile:
+    profile = state_store.get_profile()
+    if profile is None:
+        raise HTTPException(status_code=404, detail="No profile found. Save a profile first.")
+    return profile
+
+
+def _require_job_description() -> JobDescription:
+    job_description = state_store.get_job_description()
+    if not job_description:
+        raise HTTPException(status_code=404, detail="No job description found. Save one first.")
+    return job_description
+
+
+def _require_template(template_id: str) -> Dict[str, str]:
+    template = get_template(template_id)
+    if template is None:
+        available = ", ".join(item["id"] for item in TEMPLATES)
+        raise HTTPException(
+            status_code=404,
+            detail=f"Template '{template_id}' was not found. Available templates: {available}",
+        )
+    return template
+
+
+def _serialize_resume_item(item: ResumeItem) -> Dict[str, Any]:
+    data = _model_dump(item)
+    data["technologies"] = dedupe_skills(data.get("technologies", []))
+    data["highlights"] = [highlight.strip() for highlight in data.get("highlights", []) if highlight.strip()]
+    return data
+
+
+def _build_resume_analysis(profile: UserProfile, jd_text: str) -> Dict[str, Any]:
+    jd_skills = extract_skills(jd_text)
+    match_result = match_skills(profile.skills, jd_skills)
+    matched_skills = match_result["matched_skills"]
+    missing_skills = match_result["missing_skills"]
+    selected_skills = select_relevant_skills(profile.skills, jd_skills)
+    fallback_skills = dedupe_skills(profile.core_competencies + profile.skills)
+    resume_skills = selected_skills or fallback_skills
+
+    return {
+        "jd_skills": jd_skills,
+        "matched_skills": matched_skills,
+        "missing_skills": missing_skills,
+        "resume_score": calculate_resume_score(matched_skills, jd_skills),
+        "resume_skills": resume_skills,
+        "summary": generate_resume_summary(
+            profile.name,
+            resume_skills,
+            jd_text,
+            headline=profile.headline,
+        ),
+        "core_competencies": build_core_competencies(
+            profile.core_competencies or profile.skills,
+            matched_skills,
+        ),
+        "technical_skills": build_technical_skill_groups(profile.skills),
+        "recommendations": recommend_skills(missing_skills),
+    }
+
+
+def _build_resume_context(profile: UserProfile, jd_text: str) -> Dict[str, Any]:
+    analysis = _build_resume_analysis(profile, jd_text)
+    links = [{"label": label, "url": url} for label, url in profile.links.items() if url.strip()]
+    contact_parts = [part for part in [profile.phone, profile.email, profile.location] if part.strip()]
+    contact_parts.extend(link["label"] for link in links)
+
+    return {
+        "name": profile.name,
+        "headline": profile.headline or "Backend Developer",
+        "email": profile.email,
+        "phone": profile.phone,
+        "location": profile.location,
+        "contact_parts": contact_parts,
+        "links": links,
+        "summary": analysis["summary"],
+        "core_competencies": analysis["core_competencies"],
+        "technical_skills": analysis["technical_skills"],
+        "skills_text": ", ".join(analysis["resume_skills"]),
+        "education": profile.education,
+        "experience": [_serialize_resume_item(item) for item in profile.experience],
+        "projects": [_serialize_resume_item(item) for item in profile.projects],
+        "certifications": [cert for cert in profile.certifications if cert.strip()],
+        "resume_score": analysis["resume_score"],
+        "missing_skills": analysis["missing_skills"],
+    }
+
+
 @app.get("/")
 def root():
-    return {"message": "Backend is running successfully"}
+    return {
+        "message": "Resume AI Builder backend is running",
+        "default_template": "ats_single_column",
+    }
 
 
-# -------------------------
-# Profile APIs
-# -------------------------
+@app.get("/health")
+def health_check():
+    return {
+        "status": "ok",
+        "storage": state_store.snapshot(),
+        "available_templates": [template["id"] for template in TEMPLATES],
+    }
+
+
 @app.post("/profile")
 def save_profile(profile: UserProfile):
-    global stored_profile
-    stored_profile = profile
-    return {"message": "Profile saved successfully"}
+    state_store.save_profile(profile)
+    return {
+        "message": "Profile saved successfully",
+        "profile_strength": {
+            "skills_count": len(dedupe_skills(profile.skills)),
+            "projects_count": len(profile.projects),
+            "experience_count": len(profile.experience),
+        },
+    }
 
 
 @app.get("/profile")
 def get_profile():
-    if stored_profile is None:
-        return {"message": "No profile found"}
-    return stored_profile
+    return _require_profile()
 
 
-# -------------------------
-# Job Description APIs
-# -------------------------
 @app.post("/job-description")
 def save_job_description(jd: JobDescription):
-    global stored_jd
-    stored_jd = jd.jd_text
-    return {"message": "Job description saved successfully"}
+    state_store.save_job_description(jd)
+    return {
+        "message": "Job description saved successfully",
+        "extracted_skills": extract_skills(jd.jd_text),
+        "target_title": jd.target_title,
+        "company_name": jd.company_name,
+    }
+
+
+@app.get("/job-description")
+def get_job_description():
+    return _require_job_description()
 
 
 @app.get("/job-description/skills")
 def get_jd_skills():
-    if stored_jd is None:
-        return {"message": "No job description found"}
-
-    skills = extract_skills(stored_jd)
-    return {"extracted_skills": skills}
+    job_description = _require_job_description()
+    return {"extracted_skills": extract_skills(job_description.jd_text)}
 
 
-# -------------------------
-# Skill Matching API
-# -------------------------
+@app.delete("/state/reset")
+def reset_state():
+    state_store.clear()
+    return {"message": "Stored profile and job description cleared successfully"}
+
+
 @app.get("/skill-match")
 def get_skill_match():
-    if stored_profile is None:
-        return {"message": "No profile found"}
+    profile = _require_profile()
+    job_description = _require_job_description()
+    jd_skills = extract_skills(job_description.jd_text)
+    return match_skills(profile.skills, jd_skills)
 
-    if stored_jd is None:
-        return {"message": "No job description found"}
 
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
-
-    return match_skills(profile_skills, jd_skills)
 @app.get("/resume-score")
 def get_resume_score():
-    if stored_profile is None:
-        return {"message": "No profile found"}
-
-    if stored_jd is None:
-        return {"message": "No job description found"}
-
-    jd_skills = extract_skills(stored_jd)
-    profile_skills = stored_profile.skills
-
-    matched = match_skills(profile_skills, jd_skills)["matched_skills"]
-    score = calculate_resume_score(matched, jd_skills)
+    profile = _require_profile()
+    job_description = _require_job_description()
+    analysis = _build_resume_analysis(profile, job_description.jd_text)
 
     return {
-        "resume_score": f"{score}%",
-        "matched_skills": matched,
-        "total_jd_skills": jd_skills
+        "resume_score": f"{analysis['resume_score']}%",
+        "matched_skills": analysis["matched_skills"],
+        "missing_skills": analysis["missing_skills"],
+        "total_jd_skills": analysis["jd_skills"],
     }
+
+
 @app.get("/skill-recommendations")
 def get_skill_recommendations():
-    if stored_profile is None:
-        return {"message": "No profile found"}
-
-    if stored_jd is None:
-        return {"message": "No job description found"}
-
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
-
-    match_result = match_skills(profile_skills, jd_skills)
-    missing_skills = match_result["missing_skills"]
-
-    recommendations = recommend_skills(missing_skills)
+    profile = _require_profile()
+    job_description = _require_job_description()
+    analysis = _build_resume_analysis(profile, job_description.jd_text)
 
     return {
-        "missing_skills": missing_skills,
-        "recommendations": recommendations
+        "missing_skills": analysis["missing_skills"],
+        "recommendations": analysis["recommendations"],
     }
+
+
+@app.get("/analysis/fit")
+def get_fit_analysis():
+    profile = _require_profile()
+    job_description = _require_job_description()
+    analysis = _build_resume_analysis(profile, job_description.jd_text)
+
+    return {
+        "resume_score": analysis["resume_score"],
+        "matched_skills": analysis["matched_skills"],
+        "missing_skills": analysis["missing_skills"],
+        "core_competencies": analysis["core_competencies"],
+        "recommendations": analysis["recommendations"],
+    }
+
+
 @app.get("/resume/skills")
 def get_resume_skills():
-    if stored_profile is None:
-        return {"message": "No profile found"}
+    profile = _require_profile()
+    job_description = _require_job_description()
+    analysis = _build_resume_analysis(profile, job_description.jd_text)
+    return {"resume_skills": analysis["resume_skills"]}
 
-    if stored_jd is None:
-        return {"message": "No job description found"}
 
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
-
-    resume_skills = select_relevant_skills(profile_skills, jd_skills)
-
-    return {
-        "resume_skills": resume_skills
-    }
 @app.get("/resume/summary")
-def get_resume_summary():
-    if stored_profile is None:
-        return {"message": "No profile found"}
+def get_resume_summary_endpoint():
+    profile = _require_profile()
+    job_description = _require_job_description()
+    analysis = _build_resume_analysis(profile, job_description.jd_text)
+    return {"resume_summary": analysis["summary"]}
 
-    if stored_jd is None:
-        return {"message": "No job description found"}
 
-    name = stored_profile.name
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
-
-    resume_skills = select_relevant_skills(profile_skills, jd_skills)
-    summary = generate_resume_summary(name, resume_skills, stored_jd)
-
-    return {
-        "resume_summary": summary
-    }
 @app.get("/resume/skills-section")
 def get_resume_skills_section():
-    if stored_profile is None:
-        return {"message": "No profile found"}
+    profile = _require_profile()
+    job_description = _require_job_description()
+    analysis = _build_resume_analysis(profile, job_description.jd_text)
+    return {"skills_section": generate_skills_section(analysis["resume_skills"])}
 
-    if stored_jd is None:
-        return {"message": "No job description found"}
 
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
-
-    resume_skills = select_relevant_skills(profile_skills, jd_skills)
-    skills_section = generate_skills_section(resume_skills)
+@app.get("/resume/preview")
+def get_resume_preview(template_id: str = "ats_single_column"):
+    _require_template(template_id)
+    profile = _require_profile()
+    job_description = _require_job_description()
+    context = _build_resume_context(profile, job_description.jd_text)
 
     return {
-        "skills_section": skills_section
+        "template_id": template_id,
+        "header": {
+            "name": context["name"],
+            "headline": context["headline"],
+            "email": context["email"],
+            "phone": context["phone"],
+            "location": context["location"],
+            "links": context["links"],
+        },
+        "professional_summary": context["summary"],
+        "core_competencies": context["core_competencies"],
+        "technical_skills": context["technical_skills"],
+        "projects": context["projects"],
+        "experience": context["experience"],
+        "education": context["education"],
+        "certifications": context["certifications"],
+        "resume_score": context["resume_score"],
     }
+
+
 @app.get("/resume/full")
 def get_full_resume():
-    if stored_profile is None:
-        return {"message": "No profile found"}
+    profile = _require_profile()
+    job_description = _require_job_description()
+    context = _build_resume_context(profile, job_description.jd_text)
 
-    if stored_jd is None:
-        return {"message": "No job description found"}
+    full_resume = assemble_resume(
+        name=context["name"],
+        headline=context["headline"],
+        summary=context["summary"],
+        core_competencies=context["core_competencies"],
+        technical_skills=context["technical_skills"],
+        education=context["education"],
+        projects=context["projects"],
+        experience=context["experience"],
+    )
 
-    name = stored_profile.name
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
+    return {"full_resume": full_resume}
 
-    resume_skills = select_relevant_skills(profile_skills, jd_skills)
-    summary = generate_resume_summary(name, resume_skills, stored_jd)
-    skills_section = generate_skills_section(resume_skills)
 
-    full_resume = assemble_resume(summary, skills_section)
-
-    return {
-        "full_resume": full_resume
-    }
 @app.get("/templates")
 def list_resume_templates():
     return {
-        "available_templates": TEMPLATES
+        "default_template": "ats_single_column",
+        "available_templates": TEMPLATES,
     }
+
+
 @app.get("/resume/html")
 def generate_html_resume(template_id: str = "ats_single_column"):
-    if stored_profile is None:
-        return {"message": "No profile found"}
+    template = _require_template(template_id)
+    profile = _require_profile()
+    job_description = _require_job_description()
 
-    if stored_jd is None:
-        return {"message": "No job description found"}
-
-    # Build resume content (reuse existing logic)
-    name = stored_profile.name
-    email = stored_profile.email
-    phone = getattr(stored_profile, "phone", "")
-    location = getattr(stored_profile, "location", "")
-
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
-    resume_skills = select_relevant_skills(profile_skills, jd_skills)
-
-    summary = generate_resume_summary(name, resume_skills, stored_jd)
-    skills_text = ", ".join(resume_skills)
-    education = stored_profile.education
-
-    # Simple experience placeholder (we’ll improve later)
-    experience_items = "<li>Relevant academic and project experience</li>"
-
-    context = {
-        "name": name,
-        "email": email,
-        "phone": phone,
-        "location": location,
-        "summary": summary,
-        "skills": skills_text,
-        "education": education,
-        "experience": experience_items
-    }
-
-    html = render_resume(f"{template_id}.html", context)
+    context = _build_resume_context(profile, job_description.jd_text)
+    html = render_resume(template["file_name"], context)
 
     return {
-        "html_resume": html
+        "template_id": template_id,
+        "html_resume": html,
     }
+
+
+@app.get("/resume/view", response_class=HTMLResponse)
+def view_html_resume(template_id: str = "ats_single_column"):
+    template = _require_template(template_id)
+    profile = _require_profile()
+    job_description = _require_job_description()
+
+    context = _build_resume_context(profile, job_description.jd_text)
+    html = render_resume(template["file_name"], context)
+    return HTMLResponse(content=html)
+
+
 @app.get("/resume/pdf")
 def generate_pdf_resume(template_id: str = "ats_single_column"):
-    if stored_profile is None or stored_jd is None:
-        return {"message": "Profile or Job Description missing"}
+    template = _require_template(template_id)
+    profile = _require_profile()
+    job_description = _require_job_description()
 
-    name = stored_profile.name
-    email = stored_profile.email
-    phone = getattr(stored_profile, "phone", "")
-    location = getattr(stored_profile, "location", "")
-    education = stored_profile.education
+    context = _build_resume_context(profile, job_description.jd_text)
+    html = render_resume(template["file_name"], context)
 
-    profile_skills = stored_profile.skills
-    jd_skills = extract_skills(stored_jd)
-    resume_skills = select_relevant_skills(profile_skills, jd_skills)
+    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
+    pdf_path = GENERATED_DIR / f"{_slugify(profile.name)}_resume.pdf"
 
-    summary = generate_resume_summary(name, resume_skills, stored_jd)
-    skills_text = ", ".join(resume_skills)
-
-    experience_items = "<li>Relevant academic and project experience</li>"
-
-    context = {
-        "name": name,
-        "email": email,
-        "phone": phone,
-        "location": location,
-        "summary": summary,
-        "skills": skills_text,
-        "education": education,
-        "experience": experience_items
-    }
-
-    html = render_resume(f"{template_id}.html", context)
-
-    output_dir = "generated"
-    os.makedirs(output_dir, exist_ok=True)
-    pdf_path = f"{output_dir}/{name.replace(' ', '_')}_resume.pdf"
-
-    generate_pdf_from_html(html, pdf_path)
+    try:
+        generate_pdf_from_html(html, str(pdf_path))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return FileResponse(
-        pdf_path,
+        str(pdf_path),
         media_type="application/pdf",
-        filename=os.path.basename(pdf_path)
+        filename=pdf_path.name,
     )
+
+
+@app.get("/app", include_in_schema=False)
+def frontend_entry():
+    return RedirectResponse(url="/app/")
+
+
+app.mount("/app", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

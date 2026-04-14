@@ -1,11 +1,23 @@
-def match_skills(profile_skills: list, jd_skills: list):
-    profile_set = set(skill.lower() for skill in profile_skills)
-    jd_set = set(skill.lower() for skill in jd_skills)
+from backend.services.skill_extractor import dedupe_skills, normalize_skill_name
 
-    matched = [skill for skill in jd_skills if skill.lower() in profile_set]
-    missing = [skill for skill in jd_skills if skill.lower() not in profile_set]
+
+def match_skills(profile_skills: list, jd_skills: list):
+    normalized_profile = {
+        normalize_skill_name(skill).lower(): normalize_skill_name(skill)
+        for skill in dedupe_skills(profile_skills)
+    }
+
+    matched = []
+    missing = []
+
+    for skill in dedupe_skills(jd_skills):
+        normalized_skill = normalize_skill_name(skill)
+        if normalized_skill.lower() in normalized_profile:
+            matched.append(normalized_skill)
+        else:
+            missing.append(normalized_skill)
 
     return {
         "matched_skills": matched,
-        "missing_skills": missing
+        "missing_skills": missing,
     }

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ name }} - Resume</title>
+    <style>
+        :root {
+            --accent: #174c7d;
+            --accent-dark: #0f3658;
+            --surface: #eef5fb;
+            --text: #1b2732;
+            --muted: #586675;
+        }
+
+        @page {
+            size: A4;
+            margin: 12mm;
+        }
+
+        body {
+            font-family: "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            color: var(--text);
+            font-size: 12px;
+            line-height: 1.45;
+            margin: 0;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 34% 66%;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            background: var(--surface);
+            padding: 24px 20px;
+        }
+
+        .content {
+            padding: 24px 26px;
+        }
+
+        h1 {
+            color: var(--accent-dark);
+            font-size: 28px;
+            font-weight: 800;
+            margin: 0;
+            text-transform: uppercase;
+        }
+
+        .headline {
+            color: var(--accent);
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 6px;
+        }
+
+        .section {
+            margin-top: 18px;
+        }
+
+        .section-title {
+            color: var(--accent-dark);
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.3px;
+            margin: 0 0 10px;
+            text-transform: uppercase;
+        }
+
+        .contact-item,
+        .sidebar-block {
+            margin-bottom: 8px;
+        }
+
+        .chip-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .chip {
+            background: white;
+            border-radius: 999px;
+            color: var(--accent-dark);
+            padding: 4px 9px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .entry {
+            margin-bottom: 14px;
+        }
+
+        .entry-title {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .entry-meta {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .skill-group {
+            margin-bottom: 10px;
+        }
+
+        .skill-label {
+            color: var(--accent);
+            font-weight: 700;
+            margin-bottom: 3px;
+        }
+
+        ul {
+            margin: 6px 0 0 18px;
+            padding: 0;
+        }
+
+        li {
+            margin-bottom: 4px;
+        }
+
+        .summary {
+            margin: 0;
+            text-align: justify;
+        }
+
+        .education {
+            margin: 0;
+            white-space: pre-line;
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <aside class="sidebar">
+            <h1>{{ name }}</h1>
+            <div class="headline">{{ headline }}</div>
+
+            <section class="section">
+                <h2 class="section-title">Contact</h2>
+                {% if phone %}<div class="contact-item">{{ phone }}</div>{% endif %}
+                {% if email %}<div class="contact-item">{{ email }}</div>{% endif %}
+                {% if location %}<div class="contact-item">{{ location }}</div>{% endif %}
+                {% for link in links %}
+                    <div class="contact-item"><a href="{{ link.url }}">{{ link.label }}</a></div>
+                {% endfor %}
+            </section>
+
+            {% if core_competencies %}
+            <section class="section">
+                <h2 class="section-title">Core Competencies</h2>
+                <div class="chip-list">
+                    {% for competency in core_competencies %}
+                        <span class="chip">{{ competency }}</span>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            {% if technical_skills %}
+            <section class="section">
+                <h2 class="section-title">Technical Skills</h2>
+                {% for category, skills in technical_skills.items() %}
+                    <div class="skill-group">
+                        <div class="skill-label">{{ category }}</div>
+                        <div>{{ skills | join(", ") }}</div>
+                    </div>
+                {% endfor %}
+            </section>
+            {% endif %}
+
+            {% if certifications %}
+            <section class="section">
+                <h2 class="section-title">Certifications</h2>
+                {% for certification in certifications %}
+                    <div class="sidebar-block">{{ certification }}</div>
+                {% endfor %}
+            </section>
+            {% endif %}
+        </aside>
+
+        <main class="content">
+            <section class="section">
+                <h2 class="section-title">Professional Summary</h2>
+                <p class="summary">{{ summary }}</p>
+            </section>
+
+            {% if projects %}
+            <section class="section">
+                <h2 class="section-title">Projects</h2>
+                {% for project in projects %}
+                    <article class="entry">
+                        <div class="entry-title">{{ project.title }}</div>
+                        {% if project.subtitle or project.duration %}
+                            <div class="entry-meta">
+                                {{ project.subtitle }}{% if project.subtitle and project.duration %} | {% endif %}{{ project.duration }}
+                            </div>
+                        {% endif %}
+                        {% if project.description %}
+                            <div>{{ project.description }}</div>
+                        {% endif %}
+                        {% if project.technologies %}
+                            <div class="entry-meta">Technologies: {{ project.technologies | join(", ") }}</div>
+                        {% endif %}
+                        {% if project.highlights %}
+                            <ul>
+                                {% for highlight in project.highlights %}
+                                    <li>{{ highlight }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </article>
+                {% endfor %}
+            </section>
+            {% endif %}
+
+            {% if experience %}
+            <section class="section">
+                <h2 class="section-title">Experience</h2>
+                {% for item in experience %}
+                    <article class="entry">
+                        <div class="entry-title">{{ item.title }}</div>
+                        {% if item.subtitle or item.duration %}
+                            <div class="entry-meta">
+                                {{ item.subtitle }}{% if item.subtitle and item.duration %} | {% endif %}{{ item.duration }}
+                            </div>
+                        {% endif %}
+                        {% if item.description %}
+                            <div>{{ item.description }}</div>
+                        {% endif %}
+                        {% if item.technologies %}
+                            <div class="entry-meta">Technologies: {{ item.technologies | join(", ") }}</div>
+                        {% endif %}
+                        {% if item.highlights %}
+                            <ul>
+                                {% for highlight in item.highlights %}
+                                    <li>{{ highlight }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </article>
+                {% endfor %}
+            </section>
+            {% endif %}
+
+            {% if education %}
+            <section class="section">
+                <h2 class="section-title">Education</h2>
+                <p class="education">{{ education }}</p>
+            </section>
+            {% endif %}
+        </main>
+    </div>
+</body>
+</html>

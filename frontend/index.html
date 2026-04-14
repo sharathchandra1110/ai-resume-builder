@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume AI Builder</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+    <div class="background-orb orb-one"></div>
+    <div class="background-orb orb-two"></div>
+
+    <main class="app-shell">
+        <section class="hero-panel">
+            <div class="eyebrow">Resume AI Builder</div>
+            <h1>Build your frontend flow and generate resume previews from one place.</h1>
+            <p class="hero-copy">
+                Save your profile, target a job description, compare your fit, and render the resume
+                in the same app path served directly by FastAPI.
+            </p>
+
+            <div class="hero-actions">
+                <button id="load-demo" class="button button-secondary" type="button">Load Demo Data</button>
+                <a class="button button-ghost" href="/docs" target="_blank" rel="noreferrer">Open API Docs</a>
+            </div>
+
+            <div id="status-banner" class="status-banner" aria-live="polite">
+                Frontend connected. Save a profile and a job description to generate a preview.
+            </div>
+        </section>
+
+        <section class="workspace">
+            <div class="workspace-column">
+                <article class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <div class="panel-kicker">Step 1</div>
+                            <h2>Profile Details</h2>
+                        </div>
+                        <button id="save-profile" class="button button-primary" type="button">Save Profile</button>
+                    </div>
+
+                    <form id="profile-form" class="stacked-form">
+                        <div class="grid two-up">
+                            <label class="field">
+                                <span>Name</span>
+                                <input id="name" name="name" placeholder="Sharath Chandra Karupakala" required>
+                            </label>
+                            <label class="field">
+                                <span>Headline</span>
+                                <input id="headline" name="headline" placeholder="Java Backend Developer">
+                            </label>
+                        </div>
+
+                        <div class="grid three-up">
+                            <label class="field">
+                                <span>Email</span>
+                                <input id="email" name="email" type="email" placeholder="you@example.com" required>
+                            </label>
+                            <label class="field">
+                                <span>Phone</span>
+                                <input id="phone" name="phone" placeholder="+91 98765 43210">
+                            </label>
+                            <label class="field">
+                                <span>Location</span>
+                                <input id="location" name="location" placeholder="Hyderabad, India">
+                            </label>
+                        </div>
+
+                        <label class="field">
+                            <span>Education</span>
+                            <textarea id="education" name="education" rows="3" placeholder="B.Tech in Computer Science and Engineering"></textarea>
+                        </label>
+
+                        <div class="grid two-up">
+                            <label class="field">
+                                <span>Skills</span>
+                                <textarea id="skills" name="skills" rows="4" placeholder="Java, Spring Boot, REST APIs, MySQL, Git"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>Core Competencies</span>
+                                <textarea id="core_competencies" name="core_competencies" rows="4" placeholder="Backend Development, API Design, Problem Solving"></textarea>
+                            </label>
+                        </div>
+
+                        <div class="grid two-up">
+                            <label class="field">
+                                <span>Certifications</span>
+                                <textarea id="certifications" name="certifications" rows="3" placeholder="AWS Cloud Practitioner, Java Fundamentals"></textarea>
+                            </label>
+                            <div class="field-group">
+                                <span class="group-label">Links</span>
+                                <div class="grid one-up compact-stack">
+                                    <label class="field">
+                                        <span>GitHub</span>
+                                        <input id="github_url" name="github_url" placeholder="https://github.com/username">
+                                    </label>
+                                    <label class="field">
+                                        <span>LinkedIn</span>
+                                        <input id="linkedin_url" name="linkedin_url" placeholder="https://linkedin.com/in/username">
+                                    </label>
+                                    <label class="field">
+                                        <span>Portfolio</span>
+                                        <input id="portfolio_url" name="portfolio_url" placeholder="https://your-portfolio.com">
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="section-divider">
+                            <div>
+                                <div class="panel-kicker">Projects</div>
+                                <h3>Project Highlights</h3>
+                            </div>
+                            <button id="add-project" class="button button-secondary" type="button">Add Project</button>
+                        </div>
+                        <div id="projects-list" class="entry-list"></div>
+
+                        <div class="section-divider">
+                            <div>
+                                <div class="panel-kicker">Experience</div>
+                                <h3>Experience Highlights</h3>
+                            </div>
+                            <button id="add-experience" class="button button-secondary" type="button">Add Experience</button>
+                        </div>
+                        <div id="experience-list" class="entry-list"></div>
+                    </form>
+                </article>
+
+                <article class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <div class="panel-kicker">Step 2</div>
+                            <h2>Job Target</h2>
+                        </div>
+                        <button id="save-job-description" class="button button-primary" type="button">Save Job Description</button>
+                    </div>
+
+                    <form id="job-description-form" class="stacked-form">
+                        <div class="grid two-up">
+                            <label class="field">
+                                <span>Target Title</span>
+                                <input id="target_title" name="target_title" placeholder="Java Backend Developer">
+                            </label>
+                            <label class="field">
+                                <span>Company</span>
+                                <input id="company_name" name="company_name" placeholder="Target Company">
+                            </label>
+                        </div>
+
+                        <label class="field">
+                            <span>Job Description</span>
+                            <textarea id="jd_text" name="jd_text" rows="10" placeholder="Paste the full job description here..." required></textarea>
+                        </label>
+                    </form>
+                </article>
+            </div>
+
+            <div class="workspace-column workspace-column-wide">
+                <article class="panel">
+                    <div class="panel-header panel-header-wrap">
+                        <div>
+                            <div class="panel-kicker">Step 3</div>
+                            <h2>Resume Preview</h2>
+                        </div>
+                        <div class="action-cluster">
+                            <label class="field field-inline">
+                                <span>Template</span>
+                                <select id="template-select"></select>
+                            </label>
+                            <button id="generate-preview" class="button button-primary" type="button">Generate Preview</button>
+                            <button id="open-html-view" class="button button-secondary" type="button">Open HTML</button>
+                            <button id="download-pdf" class="button button-secondary" type="button">Download PDF</button>
+                            <button id="reset-state" class="button button-ghost" type="button">Reset Backend State</button>
+                        </div>
+                    </div>
+
+                    <div class="insight-grid">
+                        <div class="metric-card accent-card">
+                            <span class="metric-label">Resume Score</span>
+                            <strong id="resume-score">--</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Matched Skills</span>
+                            <strong id="matched-skill-count">0</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Missing Skills</span>
+                            <strong id="missing-skill-count">0</strong>
+                        </div>
+                    </div>
+
+                    <div class="grid preview-grid">
+                        <section class="preview-column">
+                            <div class="insight-section">
+                                <h3>Professional Summary</h3>
+                                <p id="summary-preview" class="summary-preview">
+                                    Save profile and job details to see the generated summary.
+                                </p>
+                            </div>
+
+                            <div class="insight-section">
+                                <h3>Matched Skills</h3>
+                                <div id="matched-skills" class="chip-row empty-chip-row"></div>
+                            </div>
+
+                            <div class="insight-section">
+                                <h3>Missing Skills</h3>
+                                <div id="missing-skills" class="chip-row empty-chip-row"></div>
+                            </div>
+
+                            <div class="insight-section">
+                                <h3>Core Competencies</h3>
+                                <div id="core-competencies-preview" class="chip-row empty-chip-row"></div>
+                            </div>
+
+                            <div class="insight-section">
+                                <h3>Technical Skills</h3>
+                                <div id="technical-skills-preview" class="skill-summary-list empty-list-state">
+                                    Technical groups will appear here after preview generation.
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="preview-column preview-column-wide">
+                            <div class="iframe-shell">
+                                <div class="iframe-header">
+                                    <span>Live Resume Render</span>
+                                    <span id="preview-template-label" class="template-pill">No template selected</span>
+                                </div>
+                                <iframe id="resume-frame" title="Resume preview"></iframe>
+                            </div>
+                        </section>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <template id="entry-template">
+        <article class="entry-card">
+            <div class="entry-card-head">
+                <div>
+                    <div class="entry-badge"></div>
+                    <h4 class="entry-title-label"></h4>
+                </div>
+                <button class="button button-ghost remove-entry" type="button">Remove</button>
+            </div>
+
+            <div class="grid two-up">
+                <label class="field">
+                    <span>Title</span>
+                    <input data-field="title" placeholder="Inventory Management API">
+                </label>
+                <label class="field">
+                    <span>Subtitle</span>
+                    <input data-field="subtitle" placeholder="Personal Project">
+                </label>
+            </div>
+
+            <div class="grid two-up">
+                <label class="field">
+                    <span>Duration</span>
+                    <input data-field="duration" placeholder="2025">
+                </label>
+                <label class="field">
+                    <span>Technologies</span>
+                    <input data-field="technologies" placeholder="Java, MySQL, JWT">
+                </label>
+            </div>
+
+            <label class="field">
+                <span>Description</span>
+                <textarea data-field="description" rows="3" placeholder="Built a secure backend workflow for role-based access and order processing."></textarea>
+            </label>
+
+            <label class="field">
+                <span>Highlights</span>
+                <textarea data-field="highlights" rows="4" placeholder="Designed REST endpoints&#10;Implemented JWT authentication&#10;Optimized SQL queries"></textarea>
+            </label>
+
+            <label class="field">
+                <span>Link</span>
+                <input data-field="link" placeholder="https://github.com/username/project">
+            </label>
+        </article>
+    </template>
+
+    <script src="./app.js" defer></script>
+</body>
+</html>
